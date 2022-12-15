@@ -12,7 +12,7 @@ const DEG2RAD: f32 = std::f32::consts::PI / 180.0;
 const CONTROL_PERIOD: Duration = Duration::from_millis(10);
 const MOTOR_MIN: f32 = -1.0;
 const MOTOR_MAX: f32 = 1.0;
-const NEUTRAL_ANGLE: f32 = -0.1;
+const NEUTRAL_ANGLE: f32 = -0.105;
 
 fn main() {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
