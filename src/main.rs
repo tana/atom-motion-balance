@@ -5,8 +5,14 @@ use mpu6050::Mpu6886;
 
 mod complementary_filter;
 mod atom_motion;
+mod pid;
+
+const DEG2RAD: f32 = std::f32::consts::PI / 180.0;
 
 const CONTROL_PERIOD: Duration = Duration::from_millis(10);
+const MOTOR_MIN: f32 = -1.0;
+const MOTOR_MAX: f32 = 1.0;
+const NEUTRAL_ANGLE: f32 = -0.1;
 
 fn main() {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -35,9 +41,10 @@ fn main() {
     let mut motion = atom_motion::AtomMotion::new(i2c_bus.acquire_i2c());
 
     // Initialize button
-    let mut button = PinDriver::input(peripherals.pins.gpio39).unwrap();
+    let button = PinDriver::input(peripherals.pins.gpio39).unwrap();
 
     let mut comp_filter = complementary_filter::ComplemtaryFilter::new(CONTROL_PERIOD.as_secs_f32());
+    let mut pid = pid::PIDController::new(CONTROL_PERIOD.as_secs_f32(), 10.0, 130.0, 0.3);
 
     let mut last_button_state = Level::High;
     let mut motor_active = false;
@@ -58,11 +65,21 @@ fn main() {
         let accel_angle = accel.z.atan2(-accel.y);  // Becomes 0 when USB port is facing up
         let angle = comp_filter.filter(accel_angle, gyro.x);
 
-        if motor_active {
-            motion.set_motor(atom_motion::MotorChannel::M1, 0.5).unwrap();
-        } else {
-            motion.set_motor(atom_motion::MotorChannel::M1, 0.0).unwrap();
+        // Stop when falled down
+        if (angle - NEUTRAL_ANGLE).abs() > 60.0 * DEG2RAD {
+            motor_active = false;
         }
+
+        pid.update(angle, NEUTRAL_ANGLE);
+
+        if motor_active {
+            pid.control = pid.control.clamp(MOTOR_MIN, MOTOR_MAX);
+        } else {
+            pid.control = 0.0;
+        }
+
+        motion.set_motor(atom_motion::MotorChannel::M1, -pid.control).unwrap();
+        motion.set_motor(atom_motion::MotorChannel::M2, pid.control).unwrap();
 
         // Control runs at constant frequency even if processing time changes
         std::thread::sleep(CONTROL_PERIOD - last_time.elapsed());

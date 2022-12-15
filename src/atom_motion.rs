@@ -21,7 +21,7 @@ impl<T: Write<u8>> AtomMotion<T> {
 
         self.i2c.write(DEVICE_ADDR, &[
             reg,
-            (127.0 * value).round().clamp(-128.0, 127.0) as u8
+            ((127.0 * value).round().clamp(-128.0, 127.0) as i8) as u8
         ])?;
 
         Ok(())
