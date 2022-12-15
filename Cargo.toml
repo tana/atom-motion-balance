@@ -20,6 +20,7 @@ esp-idf-sys = { version = "0.32.1", features = ["binstart"] }
 esp-idf-hal = "0.40.1"
 mpu6050 = { git = "https://github.com/tana/mpu6050", branch = "mpu6886" }
 shared-bus = "0.2.5"
+embedded-hal = "0.2.7"
 
 [build-dependencies]
 embuild = "0.30.4"

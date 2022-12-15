@@ -1,9 +1,10 @@
-use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
-use esp_idf_hal::{prelude::*, delay, i2c::{self, I2cDriver}};
 use std::time::Duration;
+use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
+use esp_idf_hal::{prelude::*, delay, i2c::{self, I2cDriver}, gpio::{PinDriver, Level}};
 use mpu6050::Mpu6886;
 
 mod complementary_filter;
+mod atom_motion;
 
 const CONTROL_PERIOD: Duration = Duration::from_millis(10);
 
@@ -30,16 +31,38 @@ fn main() {
     let mut imu = Mpu6886::new(i2c_bus.acquire_i2c());
     imu.init(&mut delay::FreeRtos).unwrap();
 
+    // Initialize Atom Motion motor driver
+    let mut motion = atom_motion::AtomMotion::new(i2c_bus.acquire_i2c());
+
+    // Initialize button
+    let mut button = PinDriver::input(peripherals.pins.gpio39).unwrap();
+
     let mut comp_filter = complementary_filter::ComplemtaryFilter::new(CONTROL_PERIOD.as_secs_f32());
+
+    let mut last_button_state = Level::High;
+    let mut motor_active = false;
 
     let mut last_time = std::time::Instant::now();
 
     loop {
+        // Toggle motor on/off using a button
+        let button_state = button.get_level();
+        if last_button_state == Level::High && button_state == Level::Low {
+            motor_active = !motor_active;
+        }
+        last_button_state = button_state;
+
         let accel = imu.get_acc().unwrap();
         let gyro = imu.get_gyro().unwrap();
 
         let accel_angle = accel.z.atan2(-accel.y);  // Becomes 0 when USB port is facing up
         let angle = comp_filter.filter(accel_angle, gyro.x);
+
+        if motor_active {
+            motion.set_motor(atom_motion::MotorChannel::M1, 0.5).unwrap();
+        } else {
+            motion.set_motor(atom_motion::MotorChannel::M1, 0.0).unwrap();
+        }
 
         // Control runs at constant frequency even if processing time changes
         std::thread::sleep(CONTROL_PERIOD - last_time.elapsed());
