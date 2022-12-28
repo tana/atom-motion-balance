@@ -21,6 +21,7 @@ esp-idf-hal = "0.40.1"
 mpu6050 = { git = "https://github.com/tana/mpu6050", branch = "mpu6886" }
 shared-bus = "0.2.5"
 embedded-hal = "0.2.7"
+nalgebra = { version = "0.31.4", default-features = false }
 
 [build-dependencies]
 embuild = "0.30.4"

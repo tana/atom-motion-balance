@@ -2,6 +2,7 @@ use std::time::Duration;
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use esp_idf_hal::{prelude::*, delay, i2c::{self, I2cDriver}, gpio::{PinDriver, Level}};
 use mpu6050::Mpu6886;
+use nalgebra::Matrix3;
 
 mod complementary_filter;
 mod atom_motion;
@@ -21,6 +22,24 @@ fn main() {
 
     let peripherals = Peripherals::take().unwrap();
 
+    // Change pins based on to target device setting
+    #[cfg(esp32)]   // For Atom Matrix
+    let (sda_pin, scl_pin, button_pin) = (peripherals.pins.gpio25, peripherals.pins.gpio21, peripherals.pins.gpio39);
+    #[cfg(esp32s3)] // For Atom S3
+    let (sda_pin, scl_pin, button_pin) = (peripherals.pins.gpio38, peripherals.pins.gpio39, peripherals.pins.gpio41);
+
+    // Atom Matrix and S3 have opposite IMU orientation
+    #[cfg(esp32)]   // For Atom Matrix
+    let imu_transform: Matrix3<f32> = Matrix3::identity();
+    #[cfg(esp32s3)] // For Atom S3
+    let imu_transform: Matrix3<f32> = Matrix3::from_diagonal_element(-1.0);
+
+    // PID parameters are different because of weight diffeernce between Atom Matrix and S3
+    #[cfg(esp32)]   // For Atom Matrix
+    let (k_p, k_i, k_d) = (10.0, 130.0, 0.3);
+    #[cfg(esp32s3)] // For Atom S3
+    let (k_p, k_i, k_d) = (10.0, 130.0, 0.3);   // TODO:
+
     // Initialize I2C
     let i2c_config = i2c::config::Config {
         baudrate: KiloHertz(400).into(),
@@ -28,7 +47,7 @@ fn main() {
         scl_pullup_enabled: true
     };
     let i2c = I2cDriver::new(
-        peripherals.i2c0, peripherals.pins.gpio25, peripherals.pins.gpio21, &i2c_config
+        peripherals.i2c0, sda_pin, scl_pin, &i2c_config
     ).unwrap();
     // Used to share the I2C bus with multiple drivers (IMU and motor)
     let i2c_bus = shared_bus::BusManagerSimple::new(i2c);
@@ -41,10 +60,10 @@ fn main() {
     let mut motion = atom_motion::AtomMotion::new(i2c_bus.acquire_i2c());
 
     // Initialize button
-    let button = PinDriver::input(peripherals.pins.gpio39).unwrap();
+    let button = PinDriver::input(button_pin).unwrap();
 
     let mut comp_filter = complementary_filter::ComplemtaryFilter::new(CONTROL_PERIOD.as_secs_f32());
-    let mut pid = pid::PIDController::new(CONTROL_PERIOD.as_secs_f32(), 10.0, 130.0, 0.3);
+    let mut pid = pid::PIDController::new(CONTROL_PERIOD.as_secs_f32(), k_p, k_i, k_d);
 
     let mut last_button_state = Level::High;
     let mut motor_active = false;
@@ -59,8 +78,8 @@ fn main() {
         }
         last_button_state = button_state;
 
-        let accel = imu.get_acc().unwrap();
-        let gyro = imu.get_gyro().unwrap();
+        let accel = imu_transform * imu.get_acc().unwrap();
+        let gyro = imu_transform * imu.get_gyro().unwrap();
 
         let accel_angle = accel.z.atan2(-accel.y);  // Becomes 0 when USB port is facing up
         let angle = comp_filter.filter(accel_angle, gyro.x);
