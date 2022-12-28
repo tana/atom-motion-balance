@@ -2,7 +2,7 @@ use std::time::Duration;
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 use esp_idf_hal::{prelude::*, delay, i2c::{self, I2cDriver}, gpio::{PinDriver, Level}};
 use mpu6050::Mpu6886;
-use nalgebra::Matrix3;
+use nalgebra::{Matrix3, Vector3};
 
 mod complementary_filter;
 mod atom_motion;
@@ -32,13 +32,10 @@ fn main() {
     #[cfg(esp32)]   // For Atom Matrix
     let imu_transform: Matrix3<f32> = Matrix3::identity();
     #[cfg(esp32s3)] // For Atom S3
-    let imu_transform: Matrix3<f32> = Matrix3::from_diagonal_element(-1.0);
+    let imu_transform: Matrix3<f32> = Matrix3::from_diagonal(&Vector3::new(-1.0, 1.0, -1.0));
 
-    // PID parameters are different because of weight diffeernce between Atom Matrix and S3
-    #[cfg(esp32)]   // For Atom Matrix
+    // PID parameters
     let (k_p, k_i, k_d) = (10.0, 130.0, 0.3);
-    #[cfg(esp32s3)] // For Atom S3
-    let (k_p, k_i, k_d) = (10.0, 130.0, 0.3);   // TODO:
 
     // Initialize I2C
     let i2c_config = i2c::config::Config {
